@@ -11,9 +11,11 @@ class Breakout extends Phaser.Scene
 
     preload() {
         console.log("Начата загрузка ресурсов...");
-        this.load.image('ball', 'assets/ball.png');
-        this.load.image('paddle', 'assets/paddle.png');
-
+        this.load.image('ballBlue', 'assets/ballBlue.png');
+        this.load.image('ballRed', 'assets/ballRed.png');
+        this.load.image('paddleBlue', 'assets/paddleBlue.png');
+        this.load.image('paddleRed', 'assets/paddleRed.png');
+        
         // Загрузка кирпичей
         for (let i = 0; i <= 5; i++) {
             this.load.image(`brick${i}`, `assets/brick${i}.png`);
@@ -32,9 +34,9 @@ class Breakout extends Phaser.Scene
         this.otherPlayers = this.add.group(); // Группа для других игроков
         this.otherBalls = this.add.group();
 
-        // Ваш шарик
-        this.ball = this.physics.add.image(400, 300, 'ball').setCollideWorldBounds(true).setBounce(1);
-        this.ball.setVelocity(150, -150);
+        // // Ваш шарик
+        // this.ball = this.physics.add.image(400, 300, 'ball').setCollideWorldBounds(true).setBounce(1);
+        // this.ball.setVelocity(150, -150);
 
         // Отправить серверу данные о перемещении шарика
         this.physics.world.on('worldstep', () => {
@@ -62,6 +64,7 @@ class Breakout extends Phaser.Scene
 
         // Получить текущие шарики
         this.socket.on('currentBalls', (balls) => {
+            console.log("Текущие шарики от сервера:", balls);
             Object.keys(balls).forEach((id) => {
                 if (id !== this.socket.id) {
                     this.addOtherBall(balls[id]);
@@ -83,7 +86,6 @@ class Breakout extends Phaser.Scene
                 }
             });
         });        
-        
     
         // Новый игрок подключился
         this.socket.on('newPlayer', (playerInfo) => {
@@ -184,18 +186,44 @@ class Breakout extends Phaser.Scene
     
     addPlayer(playerInfo) {
         console.log("Добавление вашего игрока:", playerInfo);
+    
+        // Убедимся, что paddle и ball созданы
+        if (!this.paddle) {
+            this.paddle = this.physics.add.image(playerInfo.x, playerInfo.y, 'defaultPaddle').setCollideWorldBounds(true);
+        }
+        if (!this.ball) {
+            this.ball = this.physics.add.image(playerInfo.x, playerInfo.y - 50, 'defaultBall').setCollideWorldBounds(true).setBounce(1);
+        }
+    
+        // Установка текстур
+        const paddleTexture = playerInfo.color === 'blue' ? 'paddleBlue' : 'paddleRed';
+        this.paddle.setTexture(paddleTexture);
         this.paddle.setPosition(playerInfo.x, playerInfo.y);
+    
+        const ballTexture = playerInfo.color === 'blue' ? 'ballBlue' : 'ballRed';
+        this.ball.setTexture(ballTexture);
     }
     
     addOtherPlayer(playerInfo) {
         console.log("Добавление другого игрока:", playerInfo);
-        const otherPlayer = this.physics.add.image(playerInfo.x, playerInfo.y, 'paddle').setImmovable();
+    
+        // Убедимся, что группа otherPlayers существует
+        if (!this.otherPlayers) {
+            this.otherPlayers = this.physics.add.group();
+        }
+    
+        // Создаём платформу другого игрока
+        const paddleTexture = playerInfo.color === 'blue' ? 'paddleBlue' : 'paddleRed';
+        const otherPlayer = this.physics.add.image(playerInfo.x, playerInfo.y, paddleTexture).setImmovable();
         otherPlayer.playerId = playerInfo.playerId;
+    
         this.otherPlayers.add(otherPlayer);
-    }    
+    }
+     
 
     addOtherBall(ballData) {
-        const otherBall = this.physics.add.image(ballData.x, ballData.y, 'ball').setCollideWorldBounds(true).setBounce(1);
+        const ballTexture = ballData.color === 'blue' ? 'ballBlue' : 'ballRed';
+        const otherBall = this.physics.add.image(ballData.x, ballData.y, ballTexture).setCollideWorldBounds(true).setBounce(1);
         otherBall.setVelocity(ballData.velocityX, ballData.velocityY);
         otherBall.owner = ballData.owner;
         this.otherBalls.add(otherBall);
@@ -262,8 +290,17 @@ class Breakout extends Phaser.Scene
     createGameObjects() {
         console.log("Создаём игровые объекты...");
     
+        // Установить текстуру для мяча игрока
+        const playerBallTexture = 'ballBlue'; // Предположим, игрок всегда использует синий мяч
+        this.ball = this.physics.add.image(400, 300, playerBallTexture)
+            .setCollideWorldBounds(true)
+            .setBounce(1);
+
+        this.ball.setVelocity(150, -150);
+        console.log("Мяч игрока создан с текстурой:", playerBallTexture);
+
         // Платформа
-        this.paddle = this.physics.add.image(400, 550, 'paddle').setImmovable();
+        this.paddle = this.physics.add.image(400, 550, 'paddleBlue').setImmovable();
         console.log("Создана платформа для игрока");
     
         // Логика столкновения с платформой

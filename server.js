@@ -38,11 +38,13 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
     console.log(`Пользователь подключился: ${socket.id}`);
 
-    // Добавление нового игрока
+    const playerColor = socket.id.charCodeAt(0) % 2 === 0 ? 'blue' : 'red';
+
     players[socket.id] = {
-        x: 400, // начальная позиция платформы
+        x: 400,
         y: 550,
         playerId: socket.id,
+        color: playerColor, // Назначаем цвет
     };
 
     balls[socket.id] = {
@@ -51,6 +53,7 @@ io.on('connection', (socket) => {
         velocityX: 150,
         velocityY: -150,
         owner: socket.id,
+        color: playerColor, // Назначаем цвет мячу
     };
 
     console.log(`Игрок добавлен: ${JSON.stringify(players[socket.id])}`);
