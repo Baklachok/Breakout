@@ -63,9 +63,10 @@ io.on('connection', (socket) => {
     socket.emit('currentBalls', balls);
     socket.emit('currentBricks', bricks);
 
-    // Сообщить другим игрокам о новом игроке
-    socket.broadcast.emit('newPlayer', players[socket.id]);
-    socket.broadcast.emit('newBall', balls[socket.id]);
+    // Сообщить всем игрокам (включая инициатора) о новом игроке
+    io.emit('newPlayer', players[socket.id]);
+    io.emit('newBall', balls[socket.id]);
+
 
     // Обработка движения игрока
     socket.on('playerMoved', (movementData) => {
@@ -92,8 +93,10 @@ io.on('connection', (socket) => {
 
     // Обработка удара по кирпичу
     socket.on('brickHit', (brickId) => {
+        console.log(`Получено событие brickHit от клиента ${socket.id}, ID кирпича: ${brickId}`);
         const brick = bricks.find((b) => b.id === brickId);
         if (brick && brick.active) {
+            console.log(`Обновляем кирпич с ID ${brickId} как уничтоженный.`);
             brick.active = false;
             io.emit('brickHit', brickId);
 
@@ -102,6 +105,8 @@ io.on('connection', (socket) => {
                 console.log("Все кирпичи уничтожены! Рестарт игры.");
                 resetGame();
             }
+        } else {
+            console.error(`Кирпич с ID ${brickId} не найден или уже уничтожен.`);
         }
     });
 
