@@ -2,77 +2,94 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
+// Создание приложения
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+// Данные игры
 const players = {};
 const balls = {};
 let bricks = [];
 
-// Инициализация кирпичей
+// === Функция для инициализации кирпичей ===
 function initializeBricks(rows = 5, cols = 10) {
-    const newBricks = [];
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            newBricks.push({
-                id: `${row}-${col}`, // Уникальный идентификатор кирпича
-                x: 64 + col * 64,    // Позиция кирпича по X
-                y: 50 + row * 32,    // Позиция кирпича по Y
-                active: true         // Кирпич активен
-            });
-        }
-    }
-    return newBricks;
+    return Array.from({ length: rows }, (_, row) => {
+        return Array.from({ length: cols }, (_, col) => ({
+            id: `${row}-${col}`,
+            x: 64 + col * 64,
+            y: 50 + row * 32,
+            active: true,
+        }));
+    }).flat();
 }
 
-// Инициализация кирпичей перед запуском сервера
+// === Функция для сброса игры ===
+function resetGame() {
+    console.log("Рестарт игры. Восстанавливаем кирпичи.");
+    bricks = initializeBricks(); // Инициализируем кирпичи заново
+    io.emit('resetGame', bricks); // Уведомляем всех игроков
+}
+
+// === Функция для подсчёта игроков определённого цвета ===
+function countPlayersByColor(color) {
+    return Object.values(players).filter((player) => player.color === color).length;
+}
+
+// === Инициализация кирпичей перед запуском сервера ===
 bricks = initializeBricks();
 
-app.use(express.static(__dirname + '/public'));
+// === Настройка маршрутов сервера ===
+app.use(express.static(__dirname + '/public')); // Папка для статических файлов
 
 app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/index.html');
+    res.sendFile(__dirname + '/index.html'); // Главная страница
 });
 
+// === Основная логика работы с сокетами ===
 io.on('connection', (socket) => {
     console.log(`Пользователь подключился: ${socket.id}`);
 
-    const playerColor = socket.id.charCodeAt(0) % 2 === 0 ? 'blue' : 'red';
+    // Назначение цвета игроку
+    const bluePlayers = countPlayersByColor('blue');
+    const redPlayers = countPlayersByColor('red');
+    const playerColor = bluePlayers <= redPlayers ? 'blue' : 'red';
 
+    // Создание нового игрока
     players[socket.id] = {
         x: 400,
         y: 550,
         playerId: socket.id,
-        color: playerColor, // Назначаем цвет
+        color: playerColor,
     };
 
+    // Создание мяча игрока
     balls[socket.id] = {
         x: 400,
         y: 300,
         velocityX: 150,
         velocityY: -150,
         owner: socket.id,
-        color: playerColor, // Назначаем цвет мячу
+        color: playerColor,
     };
 
     console.log(`Игрок добавлен: ${JSON.stringify(players[socket.id])}`);
 
-    // Отправить текущие данные новому игроку
+    // === Передача текущих данных новому игроку ===
     socket.emit('currentPlayers', players);
     socket.emit('currentBalls', balls);
     socket.emit('currentBricks', bricks);
 
-    // Сообщить всем игрокам (включая инициатора) о новом игроке
+    // Уведомление остальных игроков о новом подключении
     io.emit('newPlayer', players[socket.id]);
     io.emit('newBall', balls[socket.id]);
 
-
-    // Обработка движения игрока
+    // === Обработка движения игрока ===
     socket.on('playerMoved', (movementData) => {
-        if (players[socket.id]) {
-            players[socket.id].x = movementData.x;
-            players[socket.id].y = movementData.y;
+        const player = players[socket.id];
+        if (player) {
+            player.x = movementData.x;
+            player.y = movementData.y;
 
             // Уведомить остальных игроков
             socket.broadcast.emit('playerMoved', {
@@ -83,50 +100,53 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Обновление состояния шарика
+    // === Обработка движения мяча ===
     socket.on('ballMoved', (ballData) => {
-        if (balls[socket.id]) {
-            Object.assign(balls[socket.id], ballData);
-            socket.broadcast.emit('ballMoved', balls[socket.id]);
+        const ball = balls[socket.id];
+        if (ball) {
+            Object.assign(ball, ballData); // Обновление состояния мяча
+            socket.broadcast.emit('ballMoved', ball); // Уведомление остальных
         }
     });
 
-    // Обработка удара по кирпичу
+    // === Обработка удара по кирпичу ===
     socket.on('brickHit', (brickId) => {
-        console.log(`Получено событие brickHit от клиента ${socket.id}, ID кирпича: ${brickId}`);
         const brick = bricks.find((b) => b.id === brickId);
         if (brick && brick.active) {
-            console.log(`Обновляем кирпич с ID ${brickId} как уничтоженный.`);
-            brick.active = false;
-            io.emit('brickHit', brickId);
+            console.log(`Кирпич уничтожен: ${brickId}`);
+            brick.active = false; // Деактивируем кирпич
+            io.emit('brickHit', brickId); // Уведомляем всех игроков
 
-            // Проверить, остались ли активные кирпичи
+            // Проверяем, остались ли активные кирпичи
             if (!bricks.some((b) => b.active)) {
                 console.log("Все кирпичи уничтожены! Рестарт игры.");
-                resetGame();
+                resetGame(); // Перезапуск игры
             }
         } else {
-            console.error(`Кирпич с ID ${brickId} не найден или уже уничтожен.`);
+            console.error(`Ошибка: Кирпич ${brickId} не найден или уже уничтожен.`);
         }
     });
 
-    // Удаление игрока при отключении
+    // === Удаление игрока при отключении ===
     socket.on('disconnect', () => {
         console.log(`Пользователь отключился: ${socket.id}`);
-        delete players[socket.id];
-        delete balls[socket.id];
+
+        // Удаляем игрока и его мяч
+        if (players[socket.id]) {
+            delete players[socket.id];
+        }
+
+        if (balls[socket.id]) {
+            delete balls[socket.id];
+        }
+
+        // Уведомляем остальных игроков
         io.emit('playerDisconnected', socket.id);
     });
 });
 
-// Перезапуск игры
-function resetGame() {
-    console.log("Рестарт игры. Восстанавливаем кирпичи.");
-    bricks = initializeBricks();
-    io.emit('resetGame', bricks);
-}
-
-// Запуск сервера
-server.listen(8081, '0.0.0.0', () => {
-    console.log(`Сервер запущен на порту ${server.address().port}`);
+// === Запуск сервера ===
+const PORT = 8081;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Сервер запущен на порту ${PORT}`);
 });
