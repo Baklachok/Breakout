@@ -88,14 +88,22 @@ export function setupSocketEvents(scene) {
     scene.socket.on('resetGame', (bricks) => {
         console.log("Сброс игры. Восстановление кирпичей.");
         scene.bricks.clear(true, true); // Удаляем старые кирпичи
+        
         bricks.forEach((brick) => {
             if (brick.active) {
-                const brickSprite = scene.physics.add.image(brick.x, brick.y, 'brick0');
+                const brickSprite = scene.physics.add.staticImage(brick.x, brick.y, 'brick0'); // Создаем статичный кирпич
                 brickSprite.id = brick.id;
+    
+                // Добавляем кирпич в группу
                 scene.bricks.add(brickSprite);
+    
+                // Включаем столкновения между мячом и кирпичами
+                scene.physics.add.collider(scene.ball, brickSprite, (ball, brick) => {
+                    scene.hitBrick(ball, brick);
+                });
             }
         });
-    });   
+    });       
 
     console.log("События сокетов настроены.");
 }

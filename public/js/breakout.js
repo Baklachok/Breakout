@@ -8,30 +8,34 @@ export default class Breakout extends Phaser.Scene {
         this.bricks = null;
         this.paddle = null;
         this.ball = null;
-
         this.otherPlayers = null;
         this.otherBalls = null;
     }
 
     preload() {
         console.log("Начата загрузка ресурсов...");
+
+        // Загрузка ресурсов
         this.load.image('ballBlue', 'assets/ballBlue.png');
         this.load.image('ballRed', 'assets/ballRed.png');
         this.load.image('paddleBlue', 'assets/paddleBlue.png');
         this.load.image('paddleRed', 'assets/paddleRed.png');
+
         for (let i = 0; i <= 5; i++) {
             this.load.image(`brick${i}`, `assets/brick${i}.png`);
         }
+
         console.log("Ресурсы успешно загружены");
     }
 
     create() {
         console.log("Создание сцены Breakout");
 
-        // Установите соединение с сервером
+        // Установка соединения с сервером
         this.socket = io();
         console.log("Установлено соединение с сервером");
 
+        // Создание групп для других игроков и мячей
         this.otherPlayers = this.add.group();
         this.otherBalls = this.add.group();
 
@@ -39,10 +43,19 @@ export default class Breakout extends Phaser.Scene {
         createGameObjects(this);
         createBricks(this);
 
-        // Настройка событий сокетов
+        // Настройка событий
+        this.setupInputHandlers();
         setupSocketEvents(this);
+    }
 
-        // Обработчики движения платформы
+    update() {
+        if (this.ball) {
+            this.emitBallData();
+        }
+    }
+
+    // Настройка обработчиков ввода
+    setupInputHandlers() {
         this.input.on('pointermove', (pointer) => {
             this.paddle.x = Phaser.Math.Clamp(pointer.x, 52, 748);
             this.socket.emit('playerMoved', { x: this.paddle.x, y: this.paddle.y });
@@ -50,32 +63,23 @@ export default class Breakout extends Phaser.Scene {
 
         this.physics.world.on('worldbounds', (body) => {
             if (body.gameObject === this.ball) {
-                // Отправка новых координат и скорости мяча на сервер
-                const ballData = {
-                    x: this.ball.x,
-                    y: this.ball.y,
-                    velocityX: this.ball.body.velocity.x,
-                    velocityY: this.ball.body.velocity.y,
-                };
-                this.socket.emit('ballMoved', ballData);
+                this.emitBallData();
             }
-        });        
-        
+        });
     }
 
-    update() {
-        if (this.ball) {
-            const ballData = {
-                x: this.ball.x,
-                y: this.ball.y,
-                velocityX: this.ball.body.velocity.x,
-                velocityY: this.ball.body.velocity.y,
-            };
-            this.socket.emit('ballMoved', ballData);
-        }
-    }    
+    // Отправка данных мяча на сервер
+    emitBallData() {
+        const ballData = {
+            x: this.ball.x,
+            y: this.ball.y,
+            velocityX: this.ball.body.velocity.x,
+            velocityY: this.ball.body.velocity.y,
+        };
+        this.socket.emit('ballMoved', ballData);
+    }
 
-    // Функции для взаимодействия
+    // Функции взаимодействия
     addPlayer(playerInfo) {
         addPlayer(this, playerInfo);
     }
@@ -95,27 +99,45 @@ export default class Breakout extends Phaser.Scene {
     }
 
     resetGame() {
-        this.bricks.clear(true, true); // Удаляем все кирпичи из сцены
-    
-        // Восстанавливаем кирпичи на основе данных от сервера
-        this.socket.on('resetGame', (bricks) => {
-            bricks.forEach((brick) => {
-                if (brick.active) {
-                    const brickSprite = this.physics.add.image(brick.x, brick.y, 'brick0');
-                    brickSprite.id = brick.id;
-                    this.bricks.add(brickSprite);
-                }
-            });
+        this.clearBricks();
+
+        this.socket.once('resetGame', (bricks) => {
+            this.restoreBricks(bricks);
         });
     }
-    
 
     resetLevel() {
         this.resetBall();
-        this.bricks.children.each(brick => {
+        this.bricks.children.each((brick) => {
             brick.enableBody(false, 0, 0, true, true);
         });
         console.log("Кирпичи восстановлены");
+    }
+
+    clearBricks() {
+        this.bricks.clear(true, true);
+    }
+
+    restoreBricks(bricks) {
+        bricks.forEach((brick) => {
+            if (brick.active) {
+                const brickSprite = this.createBrick(brick);
+                this.bricks.add(brickSprite);
+            }
+        });
+        console.log("Кирпичи восстановлены из данных сервера");
+    }
+
+    createBrick(brickData) {
+        const brick = this.physics.add.staticImage(brickData.x, brickData.y, 'brick0');
+        brick.id = brickData.id;
+
+        // Добавление коллайдера для взаимодействия мяча и кирпичей
+        this.physics.add.collider(this.ball, brick, (ball, brick) => {
+            this.hitBrick(ball, brick);
+        });
+
+        return brick;
     }
 
     hitBrick(ball, brick) {
@@ -124,6 +146,7 @@ export default class Breakout extends Phaser.Scene {
             brick.destroy();
             this.socket.emit('brickHit', brick.id);
         }
+
         if (this.bricks.countActive() === 0) {
             this.resetLevel();
         }
@@ -132,6 +155,7 @@ export default class Breakout extends Phaser.Scene {
     hitPaddle(ball, paddle) {
         console.log("Шарик столкнулся с платформой!");
         let diff = 0;
+
         if (ball.x < paddle.x) {
             diff = paddle.x - ball.x;
             ball.setVelocityX(-10 * diff);
