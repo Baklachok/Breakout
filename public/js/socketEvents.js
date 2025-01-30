@@ -103,7 +103,22 @@ export function setupSocketEvents(scene) {
                 });
             }
         });
-    });       
+    });
+    
+    scene.socket.on('startGame', () => {
+        console.log("Игра начинается!");
+        scene.startGame();
+    });
+
+    scene.socket.on('waitingForPlayers', () => {
+        console.log("Ожидание второго игрока...");
+        scene.showWaitingMessage();
+    });
+
+    scene.socket.on('pauseGame', () => {
+        console.log("Игра приостановлена, недостаточно игроков.");
+        scene.pauseGame();
+    });
 
     console.log("События сокетов настроены.");
 }

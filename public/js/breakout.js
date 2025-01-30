@@ -1,6 +1,7 @@
 import { createGameObjects, createBricks } from './gameObjects.js';
 import { setupSocketEvents } from './socketEvents.js';
 import { addPlayer, addOtherPlayer, addOtherBall } from './playerHandlers.js';
+import { resetBall, resetLevel } from './utilities.js';
 
 export default class Breakout extends Phaser.Scene {
     constructor() {
@@ -10,6 +11,7 @@ export default class Breakout extends Phaser.Scene {
         this.ball = null;
         this.otherPlayers = null;
         this.otherBalls = null;
+        this.isGameStarted = false; // Флаг состояния игры
     }
 
     preload() {
@@ -48,9 +50,43 @@ export default class Breakout extends Phaser.Scene {
         setupSocketEvents(this);
     }
 
-    update() {
+    // === Метод для старта игры ===
+    startGame() {
+        this.isGameStarted = true; // Устанавливаем флаг начала игры
+        resetBall(this); // Сбрасываем мяч в начальное положение
+    }
+
+    // === Метод для паузы игры ===
+    pauseGame() {
+        this.isGameStarted = false; // Останавливаем игровую логику
         if (this.ball) {
-            this.emitBallData();
+            this.ball.setVelocity(0, 0); // Останавливаем движение мяча
+        }
+    }
+
+    // Метод для показа сообщения об ожидании
+    showWaitingMessage() {
+        const text = this.add.text(400, 300, 'Ожидание второго игрока...', {
+            fontSize: '32px',
+            color: '#ffffff',
+        });
+        text.setOrigin(0.5, 0.5);
+        this.time.addEvent({
+            delay: 3000,
+            callback: () => text.destroy(),
+        });
+    }
+
+    update() {
+        // Обновляем движение мяча только если игра началась
+        if (this.isGameStarted && this.ball) {
+            const ballData = {
+                x: this.ball.x,
+                y: this.ball.y,
+                velocityX: this.ball.body.velocity.x,
+                velocityY: this.ball.body.velocity.y,
+            };
+            this.socket.emit('ballMoved', ballData);
         }
     }
 
@@ -92,26 +128,12 @@ export default class Breakout extends Phaser.Scene {
         addOtherBall(this, ballData);
     }
 
-    resetBall() {
-        this.ball.setPosition(400, 300);
-        this.ball.setVelocity(150, -150);
-        console.log("Мяч сброшен в начальную позицию");
-    }
-
     resetGame() {
         this.clearBricks();
 
         this.socket.once('resetGame', (bricks) => {
             this.restoreBricks(bricks);
         });
-    }
-
-    resetLevel() {
-        this.resetBall();
-        this.bricks.children.each((brick) => {
-            brick.enableBody(false, 0, 0, true, true);
-        });
-        console.log("Кирпичи восстановлены");
     }
 
     clearBricks() {
@@ -141,21 +163,25 @@ export default class Breakout extends Phaser.Scene {
     }
 
     hitBrick(ball, brick) {
+        // Проверяем, началась ли игра
+        if (!this.isGameStarted) return;
+
         console.log("Шарик столкнулся с кирпичом!", brick.id);
         if (brick) {
             brick.destroy();
             this.socket.emit('brickHit', brick.id);
         }
-
         if (this.bricks.countActive() === 0) {
-            this.resetLevel();
+            resetLevel(this);
         }
     }
 
     hitPaddle(ball, paddle) {
+        // Проверяем, началась ли игра
+        if (!this.isGameStarted) return;
+
         console.log("Шарик столкнулся с платформой!");
         let diff = 0;
-
         if (ball.x < paddle.x) {
             diff = paddle.x - ball.x;
             ball.setVelocityX(-10 * diff);

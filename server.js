@@ -84,6 +84,17 @@ io.on('connection', (socket) => {
     io.emit('newPlayer', players[socket.id]);
     io.emit('newBall', balls[socket.id]);
 
+    // Проверяем количество игроков
+    const totalPlayers = Object.keys(players).length;
+    console.log(`Всего игроков подключено: ${totalPlayers}`);
+    if (totalPlayers === 2) {
+        console.log("Два игрока подключились, игра начинается!");
+        io.emit('startGame'); // Отправляем событие старта всем игрокам
+    } else if (totalPlayers < 2) {
+        console.log("Ожидаем второго игрока...");
+        socket.emit('waitingForPlayers'); // Уведомляем нового игрока об ожидании
+    }
+
     // === Обработка движения игрока ===
     socket.on('playerMoved', (movementData) => {
         const player = players[socket.id];
@@ -127,7 +138,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // === Удаление игрока при отключении ===
+    // Удаление игрока при отключении
     socket.on('disconnect', () => {
         console.log(`Пользователь отключился: ${socket.id}`);
 
@@ -140,8 +151,13 @@ io.on('connection', (socket) => {
             delete balls[socket.id];
         }
 
-        // Уведомляем остальных игроков
         io.emit('playerDisconnected', socket.id);
+
+        // Если игроков меньше двух, приостанавливаем игру
+        if (Object.keys(players).length < 2) {
+            console.log("Недостаточно игроков для продолжения игры");
+            io.emit('pauseGame'); // Отправляем событие паузы
+        }
     });
 });
 
