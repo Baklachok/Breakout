@@ -3,6 +3,13 @@ export function setupSocketEvents(scene) {
 
     scene.socket.on('currentPlayers', (players) => {
         console.log("Получены данные о текущих игроках:", players);
+    
+        const playerCount = Object.keys(players).length;
+        if (playerCount > 2) {
+            console.log("Максимальное количество игроков достигнуто.");
+            return;
+        }
+    
         Object.keys(players).forEach((id) => {
             if (id === scene.socket.id) {
                 scene.addPlayer(players[id]);
@@ -60,6 +67,12 @@ export function setupSocketEvents(scene) {
     });
 
     scene.socket.on('newPlayer', (playerInfo) => {
+        const currentPlayerCount = scene.otherPlayers.getChildren().length + 1; // +1 для текущего игрока
+        if (currentPlayerCount >= 2) {
+            console.log("Новый игрок не добавлен. Максимум 2 игрока.");
+            return;
+        }
+    
         if (playerInfo.playerId !== scene.socket.id) {
             console.log("Новый игрок присоединился:", playerInfo);
             scene.addOtherPlayer(playerInfo);
@@ -119,6 +132,15 @@ export function setupSocketEvents(scene) {
         console.log("Игра приостановлена, недостаточно игроков.");
         scene.pauseGame();
     });
+
+    scene.socket.on('roomFull', () => {
+        console.log("Комната заполнена. Вы не можете присоединиться.");
+        const text = scene.add.text(400, 300, 'Комната заполнена. Попробуйте позже.', {
+            fontSize: '32px',
+            color: '#ff0000',
+        });
+        text.setOrigin(0.5, 0.5);
+    });    
 
     console.log("События сокетов настроены.");
 }

@@ -2,60 +2,44 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 
-// Создание приложения
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Данные игры
 const players = {};
 const balls = {};
 let bricks = [];
 
-// === Функция для инициализации кирпичей ===
-function initializeBricks(rows = 5, cols = 10) {
-    return Array.from({ length: rows }, (_, row) => {
-        return Array.from({ length: cols }, (_, col) => ({
+const MAX_PLAYERS = 2;
+const BALL_VELOCITY = { x: 150, y: -150 };
+const BRICK_SETTINGS = { rows: 5, cols: 10, brickWidth: 64, brickHeight: 32 };
+
+function initializeBricks(rows = BRICK_SETTINGS.rows, cols = BRICK_SETTINGS.cols) {
+    return Array.from({ length: rows }, (_, row) =>
+        Array.from({ length: cols }, (_, col) => ({
             id: `${row}-${col}`,
-            x: 64 + col * 64,
-            y: 50 + row * 32,
+            x: BRICK_SETTINGS.brickWidth / 2 + col * BRICK_SETTINGS.brickWidth,
+            y: BRICK_SETTINGS.brickHeight / 2 + row * BRICK_SETTINGS.brickHeight,
             active: true,
-        }));
-    }).flat();
+        }))
+    ).flat();
 }
 
-// === Функция для сброса игры ===
 function resetGame() {
-    console.log("Рестарт игры. Восстанавливаем кирпичи.");
-    bricks = initializeBricks(); // Инициализируем кирпичи заново
-    io.emit('resetGame', bricks); // Уведомляем всех игроков
+    console.log("Рестарт игры: восстанавливаем кирпичи...");
+    bricks = initializeBricks();
+    io.emit('resetGame', bricks);
 }
 
-// === Функция для подсчёта игроков определённого цвета ===
 function countPlayersByColor(color) {
     return Object.values(players).filter((player) => player.color === color).length;
 }
 
-// === Инициализация кирпичей перед запуском сервера ===
-bricks = initializeBricks();
-
-// === Настройка маршрутов сервера ===
-app.use(express.static(__dirname + '/public')); // Папка для статических файлов
-
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/index.html'); // Главная страница
-});
-
-// === Основная логика работы с сокетами ===
-io.on('connection', (socket) => {
-    console.log(`Пользователь подключился: ${socket.id}`);
-
-    // Назначение цвета игроку
+function addPlayer(socket) {
     const bluePlayers = countPlayersByColor('blue');
     const redPlayers = countPlayersByColor('red');
     const playerColor = bluePlayers <= redPlayers ? 'blue' : 'red';
 
-    // Создание нового игрока
     players[socket.id] = {
         x: 400,
         y: 550,
@@ -63,105 +47,110 @@ io.on('connection', (socket) => {
         color: playerColor,
     };
 
-    // Создание мяча игрока
     balls[socket.id] = {
         x: 400,
         y: 300,
-        velocityX: 150,
-        velocityY: -150,
+        velocityX: BALL_VELOCITY.x,
+        velocityY: BALL_VELOCITY.y,
         owner: socket.id,
         color: playerColor,
     };
 
     console.log(`Игрок добавлен: ${JSON.stringify(players[socket.id])}`);
+}
 
-    // === Передача текущих данных новому игроку ===
+function removePlayer(socketId) {
+    if (players[socketId]) delete players[socketId];
+    if (balls[socketId]) delete balls[socketId];
+    console.log(`Игрок ${socketId} удалён.`);
+}
+
+function checkStartGame() {
+    if (Object.keys(players).length === MAX_PLAYERS) {
+        console.log("Два игрока подключились, игра начинается!");
+        io.emit('startGame');
+    } else {
+        console.log("Ожидаем второго игрока...");
+        io.emit('waitingForPlayers');
+    }
+}
+
+function checkGameOver() {
+    if (!bricks.some((brick) => brick.active)) {
+        console.log("Все кирпичи уничтожены! Рестарт игры.");
+        resetGame();
+    }
+}
+
+bricks = initializeBricks();
+
+app.use(express.static(__dirname + '/public'));
+
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
+
+io.on('connection', (socket) => {
+    console.log(`Игрок подключился: ${socket.id}`);
+
+    if (Object.keys(players).length >= MAX_PLAYERS) {
+        console.log(`Игрок ${socket.id} отклонён: максимум ${MAX_PLAYERS} игроков.`);
+        socket.emit('roomFull');
+        socket.disconnect();
+        return;
+    }
+
+    addPlayer(socket);
+
     socket.emit('currentPlayers', players);
     socket.emit('currentBalls', balls);
     socket.emit('currentBricks', bricks);
 
-    // Уведомление остальных игроков о новом подключении
     io.emit('newPlayer', players[socket.id]);
     io.emit('newBall', balls[socket.id]);
 
-    // Проверяем количество игроков
-    const totalPlayers = Object.keys(players).length;
-    console.log(`Всего игроков подключено: ${totalPlayers}`);
-    if (totalPlayers === 2) {
-        console.log("Два игрока подключились, игра начинается!");
-        io.emit('startGame'); // Отправляем событие старта всем игрокам
-    } else if (totalPlayers < 2) {
-        console.log("Ожидаем второго игрока...");
-        socket.emit('waitingForPlayers'); // Уведомляем нового игрока об ожидании
-    }
+    checkStartGame();
 
-    // === Обработка движения игрока ===
     socket.on('playerMoved', (movementData) => {
-        const player = players[socket.id];
-        if (player) {
-            player.x = movementData.x;
-            player.y = movementData.y;
-
-            // Уведомить остальных игроков
+        if (players[socket.id]) {
+            Object.assign(players[socket.id], movementData);
             socket.broadcast.emit('playerMoved', {
                 playerId: socket.id,
-                x: movementData.x,
-                y: movementData.y,
+                ...movementData,
             });
         }
     });
 
-    // === Обработка движения мяча ===
     socket.on('ballMoved', (ballData) => {
-        const ball = balls[socket.id];
-        if (ball) {
-            Object.assign(ball, ballData); // Обновление состояния мяча
-            socket.broadcast.emit('ballMoved', ball); // Уведомление остальных
+        if (balls[socket.id]) {
+            Object.assign(balls[socket.id], ballData);
+            socket.broadcast.emit('ballMoved', balls[socket.id]);
         }
     });
 
-    // === Обработка удара по кирпичу ===
     socket.on('brickHit', (brickId) => {
         const brick = bricks.find((b) => b.id === brickId);
         if (brick && brick.active) {
             console.log(`Кирпич уничтожен: ${brickId}`);
-            brick.active = false; // Деактивируем кирпич
-            io.emit('brickHit', brickId); // Уведомляем всех игроков
-
-            // Проверяем, остались ли активные кирпичи
-            if (!bricks.some((b) => b.active)) {
-                console.log("Все кирпичи уничтожены! Рестарт игры.");
-                resetGame(); // Перезапуск игры
-            }
-        } else {
-            console.error(`Ошибка: Кирпич ${brickId} не найден или уже уничтожен.`);
+            brick.active = false;
+            io.emit('brickHit', brickId);
+            checkGameOver();
         }
     });
 
-    // Удаление игрока при отключении
     socket.on('disconnect', () => {
-        console.log(`Пользователь отключился: ${socket.id}`);
-
-        // Удаляем игрока и его мяч
-        if (players[socket.id]) {
-            delete players[socket.id];
-        }
-
-        if (balls[socket.id]) {
-            delete balls[socket.id];
-        }
+        console.log(`Игрок отключился: ${socket.id}`);
+        removePlayer(socket.id);
 
         io.emit('playerDisconnected', socket.id);
 
-        // Если игроков меньше двух, приостанавливаем игру
-        if (Object.keys(players).length < 2) {
-            console.log("Недостаточно игроков для продолжения игры");
-            io.emit('pauseGame'); // Отправляем событие паузы
+        if (Object.keys(players).length < MAX_PLAYERS) {
+            console.log("Недостаточно игроков для продолжения игры.");
+            io.emit('pauseGame');
         }
     });
 });
 
-// === Запуск сервера ===
 const PORT = 8081;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Сервер запущен на порту ${PORT}`);
