@@ -42,14 +42,19 @@ export function setupSocketEvents(scene) {
     });
   
     
-    scene.socket.on('brickHit', (brickId) => {
-        console.log("Кирпич ударен:", brickId);
+    scene.socket.on('brickHit', (data) => {
+        console.log("Кирпич ударен:", data.brickId);
     
-        const brick = scene.bricks.getChildren().find((b) => b.id === brickId);
+        const brick = scene.bricks.getChildren().find((b) => b.id === data.brickId);
         if (brick) {
-            brick.destroy(); // Удаляем кирпич
+            brick.destroy();
         }
-    });  
+    
+        // Обновляем счёт игрока
+        if (data.scores[scene.socket.id] !== undefined) {
+            scene.scoreText.setText(`Очки: ${data.scores[scene.socket.id]}`);
+        }
+    });
 
     scene.socket.on('playerMoved', (playerInfo) => {
         const otherPlayer = scene.otherPlayers.getChildren().find((p) => p.playerId === playerInfo.playerId);

@@ -2,6 +2,8 @@ export function createGameObjects(scene) {
     console.log("Создаём игровые объекты...");
 
     const playerBallTexture = 'ballBlue';
+    scene.scores = {};
+
     scene.ball = scene.physics.add.image(400, 300, playerBallTexture)
         .setCollideWorldBounds(true)
         .setBounce(1)
@@ -10,6 +12,13 @@ export function createGameObjects(scene) {
     scene.paddle = scene.physics.add.image(400, 550, 'paddleBlue').setImmovable();
 
     scene.physics.add.collider(scene.ball, scene.paddle, scene.hitPaddle, null, scene);
+
+    // Перемещаем счёт в правый верхний угол
+    scene.scoreText = scene.add.text(750, 20, 'Очки: 0', {
+        fontSize: '24px',
+        fill: '#fff',
+        align: 'right'
+    }).setOrigin(1, 0); // Устанавливаем якорь в правый верхний угол
 
     console.log("Игровые объекты созданы.");
 }

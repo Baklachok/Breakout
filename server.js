@@ -9,6 +9,7 @@ const io = new Server(server);
 const players = {};
 const balls = {};
 let bricks = [];
+const scores = {};
 
 const MAX_PLAYERS = 2;
 const BALL_VELOCITY = { x: 150, y: -150 };
@@ -128,12 +129,19 @@ io.on('connection', (socket) => {
         }
     });
 
+    const scores = {}; // Хранение очков игроков
+
     socket.on('brickHit', (brickId) => {
         const brick = bricks.find((b) => b.id === brickId);
         if (brick && brick.active) {
             console.log(`Кирпич уничтожен: ${brickId}`);
             brick.active = false;
-            io.emit('brickHit', brickId);
+
+            // Увеличиваем очки игрока
+            if (!scores[socket.id]) scores[socket.id] = 0;
+            scores[socket.id] += 10;
+
+            io.emit('brickHit', { brickId, scores }); // Отправляем обновлённые очки
             checkGameOver();
         }
     });
