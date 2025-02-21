@@ -27,9 +27,19 @@ function initializeBricks(rows = BRICK_SETTINGS.rows, cols = BRICK_SETTINGS.cols
 }
 
 function resetGame() {
-    console.log("Рестарт игры: восстанавливаем кирпичи...");
+    console.log("Рестарт игры: восстанавливаем кирпичи и сбрасываем очки...");
+
     bricks = initializeBricks();
-    io.emit('resetGame', bricks);
+
+    console.log("Очки перед сбросом:", JSON.stringify(scores));
+
+    for (const playerId in scores) {
+        scores[playerId] = 0;
+    }
+
+    console.log("Очки после сброса:", JSON.stringify(scores));
+
+    io.emit('resetGame', { bricks, scores });
 }
 
 function countPlayersByColor(color) {
@@ -57,6 +67,10 @@ function addPlayer(socket) {
         color: playerColor,
     };
 
+    if (!scores[socket.id]) {
+        scores[socket.id] = 0;
+    }
+
     console.log(`Игрок добавлен: ${JSON.stringify(players[socket.id])}`);
 }
 
@@ -67,7 +81,8 @@ function removePlayer(socketId) {
 }
 
 function checkStartGame() {
-    if (Object.keys(players).length === MAX_PLAYERS) {
+    const playerCount = Object.keys(players).length;
+    if (playerCount === MAX_PLAYERS) {
         console.log("Два игрока подключились, игра начинается!");
         io.emit('startGame');
     } else {
@@ -81,6 +96,12 @@ function checkGameOver() {
         console.log("Все кирпичи уничтожены! Рестарт игры.");
         resetGame();
     }
+}
+
+function incrementScore(playerId, points = 10) {
+    if (!scores[playerId]) scores[playerId] = 0;
+    scores[playerId] += points;
+    console.log(`Игрок ${playerId} получил ${points} очков. Всего: ${scores[playerId]}`);
 }
 
 bricks = initializeBricks();
@@ -106,6 +127,7 @@ io.on('connection', (socket) => {
     socket.emit('currentPlayers', players);
     socket.emit('currentBalls', balls);
     socket.emit('currentBricks', bricks);
+    socket.emit('currentScores', scores);
 
     io.emit('newPlayer', players[socket.id]);
     io.emit('newBall', balls[socket.id]);
@@ -129,19 +151,15 @@ io.on('connection', (socket) => {
         }
     });
 
-    const scores = {}; // Хранение очков игроков
-
     socket.on('brickHit', (brickId) => {
         const brick = bricks.find((b) => b.id === brickId);
         if (brick && brick.active) {
             console.log(`Кирпич уничтожен: ${brickId}`);
             brick.active = false;
 
-            // Увеличиваем очки игрока
-            if (!scores[socket.id]) scores[socket.id] = 0;
-            scores[socket.id] += 10;
+            incrementScore(socket.id, 10);
 
-            io.emit('brickHit', { brickId, scores }); // Отправляем обновлённые очки
+            io.emit('brickHit', { brickId, scores });
             checkGameOver();
         }
     });

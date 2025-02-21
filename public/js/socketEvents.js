@@ -32,7 +32,7 @@ export function setupSocketEvents(scene) {
     scene.socket.on('currentBricks', (bricks) => {
         console.log("Получены актуальные кирпичи от сервера:", bricks);
 
-        scene.bricks.clear(true, true); // Удаляем старые кирпичи
+        scene.bricks.clear(true, true);
         bricks.forEach((brick) => {
             if (brick.active) {
                 const brickSprite = scene.bricks.create(brick.x, brick.y, 'brick0');
@@ -50,7 +50,6 @@ export function setupSocketEvents(scene) {
             brick.destroy();
         }
     
-        // Обновляем счёт игрока
         if (data.scores[scene.socket.id] !== undefined) {
             scene.scoreText.setText(`Очки: ${data.scores[scene.socket.id]}`);
         }
@@ -72,7 +71,7 @@ export function setupSocketEvents(scene) {
     });
 
     scene.socket.on('newPlayer', (playerInfo) => {
-        const currentPlayerCount = scene.otherPlayers.getChildren().length + 1; // +1 для текущего игрока
+        const currentPlayerCount = scene.otherPlayers.getChildren().length + 1;
         if (currentPlayerCount >= 2) {
             console.log("Новый игрок не добавлен. Максимум 2 игрока.");
             return;
@@ -92,10 +91,8 @@ export function setupSocketEvents(scene) {
     });
      
     scene.socket.on('ballMoved', (ballData) => {
-        // Найти мячик по идентификатору владельца
         const ball = scene.otherBalls.getChildren().find((b) => b.owner === ballData.owner);
         if (ball) {
-            // Обновить позицию и скорость мячика
             ball.setPosition(ballData.x, ballData.y);
             ball.setVelocity(ballData.velocityX, ballData.velocityY);
         } else {
@@ -103,24 +100,32 @@ export function setupSocketEvents(scene) {
         }
     });  
     
-    scene.socket.on('resetGame', (bricks) => {
+    scene.socket.on('resetGame', (data) => {
         console.log("Сброс игры. Восстановление кирпичей.");
-        scene.bricks.clear(true, true); // Удаляем старые кирпичи
+        scene.bricks.clear(true, true);
+
+        console.log("Очки, полученные от сервера:", JSON.stringify(data.scores));
         
-        bricks.forEach((brick) => {
+        data.bricks.forEach((brick) => {
             if (brick.active) {
-                const brickSprite = scene.physics.add.staticImage(brick.x, brick.y, 'brick0'); // Создаем статичный кирпич
+                const brickSprite = scene.physics.add.staticImage(brick.x, brick.y, 'brick0');
                 brickSprite.id = brick.id;
     
-                // Добавляем кирпич в группу
                 scene.bricks.add(brickSprite);
-    
-                // Включаем столкновения между мячом и кирпичами
+
                 scene.physics.add.collider(scene.ball, brickSprite, (ball, brick) => {
                     scene.hitBrick(ball, brick);
                 });
             }
         });
+
+        if (data.scores[scene.socket.id] !== undefined) {
+            console.log(`Обновляем очки игрока ${scene.socket.id}: ${data.scores[scene.socket.id]}`);
+            scene.scoreText.setText(`Очки: ${data.scores[scene.socket.id]}`);
+        } else {
+            console.warn("Очки для игрока не найдены, устанавливаем 0");
+            scene.scoreText.setText("Очки: 0");
+        }
     });
     
     scene.socket.on('startGame', () => {
